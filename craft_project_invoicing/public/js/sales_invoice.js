@@ -104,7 +104,8 @@ frappe.ui.form.on('Sales Invoice', {
 				method: "craft_project_invoicing.events.sales_invoice.get_so_detail",
 				args: {
 					"sales_order": frm.doc.items[0].sales_order,
-					"invoice_per": frm.doc.custom_invoice_percentage
+					"invoice_per": frm.doc.custom_invoice_percentage,
+					"doc": frm.doc
 				},
 				callback: function (r) {
 					if (r.message) {
@@ -115,12 +116,17 @@ frappe.ui.form.on('Sales Invoice', {
 									frappe.model.set_value(i.doctype, i.name, "qty", r.message[i.so_detail].qty);
 								}
 							}
+	
+							if (frm.doc.custom_invoice_percentage && !i.invoicing_percentage) {
+								frappe.model.set_value(i.doctype, i.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
+							}
 						});
 					}
 				}
 			});
 		}
 	},
+	
 });
 
 var set_taxes = function(frm, sales_order) {

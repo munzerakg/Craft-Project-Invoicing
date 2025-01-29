@@ -23,6 +23,11 @@ fixtures = [
 
 						 # Sales Invoice Item
 						 "Sales Invoice Item-custom_so_qty",
+                         "Sales Invoice Item-custom_section_break_hdgti",
+                         "Sales Invoice Item-custom_cumulative",
+                         "Sales Invoice Item-custom_invoicing_percentage",
+                         "Sales Invoice Item-custom_previous",
+                         
 
 						 # Sales Order
 						 "Sales Order-custom_order_invoicing_type",
@@ -57,17 +62,22 @@ fixtures = [
 			 ]
 		]
 	},
-	# {
-	# 	"dt": "Property Setter",
-	# 	"filters": [
-	# 		["name", "in",
-	# 		[
-	# 			# Journal Entry Account
-	# 			"Journal Entry Account-reference_type-options",
-	# 		]
-	# 		]
-	# 	]
-	# },
+	{
+		"dt": "Property Setter",
+		"filters": [
+			["name", "in",
+			# [
+			# 	# Journal Entry Account
+			# 	"Journal Entry Account-reference_type-options",
+			# ]
+            (
+                "Sales Invoice Item-qty-columns",
+                "Sales Invoice Item-item_code-columns",
+                "Sales Invoice Item-main-field_order"
+			)
+			]
+		]
+	},
 ]
 # include js, css files in header of desk.html
 # app_include_css = "/assets/craft_project_invoicing/css/craft_project_invoicing.css"
@@ -187,6 +197,8 @@ doc_events = {
 	"Sales Invoice": {
 		"on_submit": "craft_project_invoicing.events.sales_invoice.on_submit",
 		"on_cancel": "craft_project_invoicing.events.sales_invoice.on_cancel",
+        "validate": "craft_project_invoicing.events.sales_invoice.validate",
+
 	}
 }
 

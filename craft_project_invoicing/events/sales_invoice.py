@@ -129,6 +129,26 @@ def on_submit(doc, method):
 					# "remaining_retention": remaining_retention
 				})
 
+
+def validate(doc, method):
+    if doc.items and doc.sales_order:
+        for item in doc.items:
+            previous_amount = frappe.db.sql("""
+                SELECT SUM(amount) 
+                FROM `tabSales Invoice Item` sii
+                JOIN `tabSales Invoice` si ON sii.parent = si.name
+                WHERE sii.item_code = %s 
+                AND si.sales_order = %s 
+                AND si.docstatus = 1
+                AND si.name != %s
+            """, (item.item_code, doc.sales_order, doc.name))
+
+            item.previous_amount = previous_amount[0][0] if previous_amount and previous_amount[0][0] else 0
+
+            item.cumulative_amount = item.amount + item.previous_amount
+
+
+
 def on_cancel(doc, method):
 	invoice_type = {
 		"Advance": "advance_billed",
@@ -203,22 +223,32 @@ def on_cancel(doc, method):
 
 
 @frappe.whitelist()
-def get_so_detail(sales_order, invoice_per=None):
+def get_so_detail(sales_order, invoice_per=None, doc=None):
+	import json
 	if not sales_order:
 		return
 
-	if invoice_per and isinstance(invoice_per, str):
-		invoice_per = flt(invoice_per)
+	if doc:
+		if isinstance(doc, str):
+			doc = json.loads(doc)
+			doc = frappe.get_doc(doc)
+		
+		if invoice_per and isinstance(invoice_per, str):
+			invoice_per = flt(invoice_per)
 
-	so_doc = frappe.get_doc("Sales Order", sales_order)
-	so_details = {}
-	if so_doc and so_doc.items:
-		for item in so_doc.items:
-			detail_dict = frappe._dict({
-				"so_detail": item.name,
-				"so_qty": item.qty,
-				"qty": item.qty * (invoice_per/100) if invoice_per else None
-			})
-			so_details[item.name] = detail_dict
+		so_doc = frappe.get_doc("Sales Order", sales_order)
+		so_details = {}
+		if so_doc and so_doc.items:
+			for item in so_doc.items:
+				detail_dict = frappe._dict({
+					"so_detail": item.name,
+					"so_qty": item.qty,
+					"qty": item.qty * (invoice_per/100) if invoice_per else item.qty
+				})
+				so_details[item.name] = detail_dict
+		for i in doc.items:
+			if i.invoicing_percentage and i.so_detail:
+				detail = so_details[i.so_detail]
+				detail["qty"] = detail["so_qty"] * (i.invoicing_percentage / 100)
 
-	return so_details if so_details else None
+		return so_details if so_details else None

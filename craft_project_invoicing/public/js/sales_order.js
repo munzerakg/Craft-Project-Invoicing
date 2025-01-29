@@ -31,4 +31,20 @@ frappe.ui.form.on('Sales Order', {
 			frm: frm
 		});
 	},
+	refresh: function(frm) {
+        frm.add_custom_button("Proforma Invoice", function() {
+            frappe.call({
+                method: "craft_project_invoicing.events.sales_order.create_proforma_invoice",
+                args: {
+                    source_name: frm.doc.name
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        frappe.model.sync(r.message);
+                        frappe.set_route("Form", r.message.doctype, r.message.name);
+                    }
+                }
+            });
+        }, "Create");
+    }
 });

@@ -20,6 +20,9 @@ fixtures = [
 						 "Sales Invoice-sales_order",
 						 "Sales Invoice-custom_invoice_percentage",
 						 "Sales Invoice-custom_sales_order_type",
+                         "Sales Invoice-custom_proforma_invoice_ref",
+                         "Sales Invoice-custom_advance_percentage",
+                         "Sales Invoice-custom_expected_collected_date",
 
 						 # Sales Invoice Item
 						 "Sales Invoice Item-custom_so_qty",

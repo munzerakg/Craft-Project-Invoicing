@@ -31,6 +31,10 @@ fixtures = [
                          "Sales Invoice Item-custom_invoicing_percentage",
                          "Sales Invoice Item-custom_previous",
                          
+						 #Sales Taxes and Charges
+                         
+						 "Sales Taxes and Charges-custom_cumulative_amount",
+                         "Sales Taxes and Charges-custom_previous_amount",
 
 						 # Sales Order
 						 "Sales Order-custom_order_invoicing_type",
@@ -76,7 +80,8 @@ fixtures = [
             (
                 "Sales Invoice Item-qty-columns",
                 "Sales Invoice Item-item_code-columns",
-                "Sales Invoice Item-main-field_order"
+                "Sales Invoice Item-main-field_order",
+                "Sales Taxes and Charges-main-field_order",
 			)
 			]
 		]

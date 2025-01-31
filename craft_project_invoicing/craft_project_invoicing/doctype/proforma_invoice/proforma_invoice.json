@@ -34,6 +34,7 @@
   "column_break_rlar",
   "retention_percentage",
   "on_delivery_percentage",
+  "custom_invoice_percentage",
   "accounting_dimensions_section",
   "cost_center",
   "dimension_col_break",
@@ -1721,6 +1722,11 @@
    "fieldtype": "Tab Break",
    "label": "Connections",
    "show_dashboard": 1
+  },
+  {
+   "fieldname": "custom_invoice_percentage",
+   "fieldtype": "Percent",
+   "label": "Invoice Percentage"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -1731,7 +1737,7 @@
    "link_fieldname": "custom_proforma__invoice_ref"
   }
  ],
- "modified": "2025-01-29 14:24:49.486066",
+ "modified": "2025-01-29 17:01:12.960573",
  "modified_by": "Administrator",
  "module": "Craft Project Invoicing",
  "name": "Proforma Invoice",

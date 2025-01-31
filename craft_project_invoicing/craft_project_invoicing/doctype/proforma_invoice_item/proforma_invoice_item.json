@@ -18,12 +18,17 @@
   "description",
   "item_group",
   "brand",
+  "section_break_nvxq",
+  "invoicing_percentage",
+  "previous_amount",
+  "cumulative_amount",
   "image_section",
   "image",
   "image_view",
   "quantity_and_rate",
   "qty",
   "stock_uom",
+  "custom_so_qty",
   "col_break2",
   "uom",
   "conversion_factor",
@@ -407,7 +412,7 @@
    "precision": "2"
   },
   {
-   "columns": 2,
+   "columns": 1,
    "depends_on": "eval: doc.type != \"\"",
    "fieldname": "rate",
    "fieldtype": "Currency",
@@ -914,16 +919,45 @@
    "read_only": 1
   },
   {
+   "fieldname": "section_break_nvxq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "invoicing_percentage",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Invoicing Percentage"
+  },
+  {
+   "fieldname": "custom_so_qty",
+   "fieldtype": "Float",
+   "label": "SO Qty",
+   "read_only": 1
+  },
+  {
    "fieldname": "so_item_detail",
    "fieldtype": "Data",
    "label": "SO Item Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "previous_amount",
+   "fieldtype": "Currency",
+   "label": "Previous Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cumulative_amount",
+   "fieldtype": "Currency",
+   "label": "Cumulative Amount",
    "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-29 13:53:42.803760",
+ "modified": "2025-01-29 16:50:57.802377",
  "modified_by": "Administrator",
  "module": "Craft Project Invoicing",
  "name": "Proforma Invoice Item",

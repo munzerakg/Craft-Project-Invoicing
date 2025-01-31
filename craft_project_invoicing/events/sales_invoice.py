@@ -144,8 +144,30 @@ def validate(doc, method):
             """, (item.item_code, doc.sales_order, doc.name))
 
             item.previous_amount = previous_amount[0][0] if previous_amount and previous_amount[0][0] else 0
-
             item.cumulative_amount = item.amount + item.previous_amount
+
+    if doc.taxes and doc.sales_order:
+        for tax in doc.taxes:
+            condition = ""
+            params = [doc.sales_order, doc.name]
+
+            if tax.is_advance:
+                condition = "AND stc.is_advance = 1"
+            elif tax.is_retention:
+                condition = "AND stc.is_retention = 1"
+
+            previous_tax_amount = frappe.db.sql(f"""
+                SELECT SUM(tax_amount) 
+                FROM `tabSales Taxes and Charges` stc
+                JOIN `tabSales Invoice` si ON stc.parent = si.name
+                WHERE si.sales_order = %s 
+                AND si.docstatus = 1
+                AND si.name != %s
+                {condition}
+            """, tuple(params))
+
+            tax.previous_amount = previous_tax_amount[0][0] if previous_tax_amount and previous_tax_amount[0][0] else 0
+            tax.cumulative_amount = tax.tax_amount + tax.previous_amount
 
 
 

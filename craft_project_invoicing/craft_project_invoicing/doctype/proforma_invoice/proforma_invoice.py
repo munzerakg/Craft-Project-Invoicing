@@ -13,16 +13,54 @@ from frappe.model.mapper import get_mapped_doc
 
 
 class ProformaInvoice(Document):
-	def validate(self):
-		sales_order = frappe.get_doc("Sales Order", self.sales_order)
+    def validate(self):
+        sales_order = frappe.get_doc("Sales Order", self.sales_order)
 
-		so_total = sales_order.total  
-		pi_total = self.total 
+        so_total = sales_order.total  
+        pi_total = self.total 
 
-		if pi_total > so_total:
-			frappe.throw(f"The total amount in Proforma Invoice ({pi_total}) cannot exceed the Sales Order total ({so_total}).")
+        if pi_total > so_total:
+            frappe.throw(f"The total amount in Proforma Invoice ({pi_total}) cannot exceed the Sales Order total ({so_total}).")
+        
+        if self.items and self.sales_order:
+            for item in self.items:
+                # Fetch previous sales invoice amounts for the same item in the sales order
+                previous_amount = frappe.db.sql("""
+                    SELECT SUM(amount) 
+                    FROM `tabSales Invoice Item` sii
+                    JOIN `tabSales Invoice` si ON sii.parent = si.name
+                    WHERE sii.item_code = %s 
+                    AND si.sales_order = %s 
+                    AND si.docstatus = 1
+                    AND si.name != %s
+                """, (item.item_code, self.sales_order, self.name))
 
-		
+                item.previous_amount = previous_amount[0][0] if previous_amount and previous_amount[0][0] else 0
+                item.cumulative_amount = item.amount + item.previous_amount
+
+        if self.taxes and self.sales_order:
+            for tax in self.taxes:
+                condition = ""
+                params = [self.sales_order, self.name]
+
+                if tax.is_advance:
+                    condition = "AND stc.is_advance = 1"
+                elif tax.is_retention:
+                    condition = "AND stc.is_retention = 1"
+
+                previous_tax_amount = frappe.db.sql(f"""
+                    SELECT SUM(tax_amount) 
+                    FROM `tabSales Taxes and Charges` stc
+                    JOIN `tabSales Invoice` si ON stc.parent = si.name
+                    WHERE si.sales_order = %s 
+                    AND si.docstatus = 1
+                    AND si.name != %s
+                    {condition}
+                """, tuple(params))
+
+                tax.previous_amount = previous_tax_amount[0][0] if previous_tax_amount and previous_tax_amount[0][0] else 0
+                tax.cumulative_amount = tax.tax_amount + tax.previous_amount
+
 
 
 
@@ -85,7 +123,8 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 					"party_account_currency": "party_account_currency",
 					"payment_terms_template": "payment_terms_template",
                     "sales_order":"sale_order",
-                    "name": "custom_proforma__invoice_ref"
+                    "name": "custom_proforma__invoice_ref",
+                    "custom_invoice_percentage" : "custom_invoice_percentage",
 				},
 				"field_no_map": ["payment_terms_template"],
 				"validation": {"docstatus": ["=", 1]},
@@ -304,22 +343,33 @@ def on_submit(doc, method):
 
 
 @frappe.whitelist()
-def get_so_detail(sales_order, invoice_per=None):
-    if not sales_order:
-        return
+def get_so_detail(sales_order, invoice_per=None, doc=None):
+	import json
+	if not sales_order:
+		return
 
-    if invoice_per and isinstance(invoice_per, str):
-        invoice_per = flt(invoice_per)
+	if doc:
+		if isinstance(doc, str):
+			doc = json.loads(doc)
+			doc = frappe.get_doc(doc)
+		
+		if invoice_per and isinstance(invoice_per, str):
+			invoice_per = flt(invoice_per)
 
-    so_doc = frappe.get_doc("Sales Order", sales_order)
-    so_details = {}
-    if so_doc and so_doc.items:
-        for item in so_doc.items:
-            detail_dict = frappe._dict({
-                "so_detail": item.name,
-                "so_qty": item.qty,
-                "qty": item.qty * (invoice_per / 100) if invoice_per else None
-            })
-            so_details[item.name] = detail_dict
+		so_doc = frappe.get_doc("Sales Order", sales_order)
+		so_details = {}
+		if so_doc and so_doc.items:
+			for item in so_doc.items:
+				detail_dict = frappe._dict({
+					"so_item_detail": item.name,
+					"so_qty": item.qty,
+					"qty": item.qty * (invoice_per/100) if invoice_per else item.qty
+				})
+				so_details[item.name] = detail_dict
+		for i in doc.items:
+			if i.invoicing_percentage and i.so_item_detail:
+				detail = so_details[i.so_item_detail]
+				detail["qty"] = detail["so_qty"] * (i.invoicing_percentage / 100)
 
-    return so_details if so_details else None
+		return so_details if so_details else None
+

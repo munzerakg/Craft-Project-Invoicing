@@ -1573,22 +1573,28 @@ frappe.ui.form.on('Proforma Invoice', {
 		}
 	},
 
+	
 	validate: function (frm) {
 		if (frm.doc.items && frm.doc.items.length > 0 && frm.doc.items[0].sales_order) {
 			frappe.call({
-				method: "craft_project_invoicing.craft_project_invoicing.doctype.proforma_invoice.proforma_invoice.get_so_detail", // Change method for proforma_invoice
+				method: "craft_project_invoicing.craft_project_invoicing.doctype.proforma_invoice.proforma_invoice.get_so_detail",
 				args: {
 					"sales_order": frm.doc.items[0].sales_order,
-					"invoice_per": frm.doc.invoice_percentage
+					"invoice_per": frm.doc.custom_invoice_percentage,
+					"doc": frm.doc
 				},
 				callback: function (r) {
 					if (r.message) {
 						$.each(frm.doc.items, function (k, i) {
-							if (r.message[i.so_detail]) {
-								frappe.model.set_value(i.doctype, i.name, "custom_so_qty", r.message[i.so_detail].so_qty);
-								if (r.message[i.so_detail].qty) {
-									frappe.model.set_value(i.doctype, i.name, "qty", r.message[i.so_detail].qty);
+							if (r.message[i.so_item_detail]) {
+								frappe.model.set_value(i.doctype, i.name, "custom_so_qty", r.message[i.so_item_detail].so_qty);
+								if (r.message[i.so_item_detail].qty) {
+									frappe.model.set_value(i.doctype, i.name, "qty", r.message[i.so_item_detail].qty);
 								}
+							}
+	
+							if (frm.doc.custom_invoice_percentage && !i.invoicing_percentage) {
+								frappe.model.set_value(i.doctype, i.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
 							}
 						});
 					}

@@ -133,8 +133,8 @@ def on_submit(doc, method):
 def validate(doc, method):
     if doc.items and doc.sales_order:
         for item in doc.items:
-            previous_amount = frappe.db.sql("""
-                SELECT SUM(amount) 
+            previous_data = frappe.db.sql("""
+                SELECT SUM(sii.amount), SUM(sii.invoicing_percentage)
                 FROM `tabSales Invoice Item` sii
                 JOIN `tabSales Invoice` si ON sii.parent = si.name
                 WHERE sii.item_code = %s 
@@ -143,8 +143,15 @@ def validate(doc, method):
                 AND si.name != %s
             """, (item.item_code, doc.sales_order, doc.name))
 
-            item.previous_amount = previous_amount[0][0] if previous_amount and previous_amount[0][0] else 0
-            item.cumulative_amount = item.amount + item.previous_amount
+            previous_amount = previous_data[0][0] if previous_data and previous_data[0][0] else 0
+            previous_percentage = previous_data[0][1] if previous_data and previous_data[0][1] else 0
+
+            item.previous_amount = previous_amount
+            item.previous_percentage = previous_percentage
+            item.cumulative_amount = item.amount + previous_amount
+            item.cumulative_percentage = item.invoicing_percentage + previous_percentage
+
+
 
     if doc.taxes and doc.sales_order:
         for tax in doc.taxes:
@@ -244,33 +251,38 @@ def on_cancel(doc, method):
 					})
 
 
+import json
+
 @frappe.whitelist()
 def get_so_detail(sales_order, invoice_per=None, doc=None):
-	import json
-	if not sales_order:
-		return
+    if not sales_order:
+        return None
 
-	if doc:
-		if isinstance(doc, str):
-			doc = json.loads(doc)
-			doc = frappe.get_doc(doc)
-		
-		if invoice_per and isinstance(invoice_per, str):
-			invoice_per = flt(invoice_per)
+    if doc:
+        if isinstance(doc, str):
+            doc = json.loads(doc)
+        doc = frappe.get_doc(doc)
 
-		so_doc = frappe.get_doc("Sales Order", sales_order)
-		so_details = {}
-		if so_doc and so_doc.items:
-			for item in so_doc.items:
-				detail_dict = frappe._dict({
-					"so_detail": item.name,
-					"so_qty": item.qty,
-					"qty": item.qty * (invoice_per/100) if invoice_per else item.qty
-				})
-				so_details[item.name] = detail_dict
-		for i in doc.items:
-			if i.invoicing_percentage and i.so_detail:
-				detail = so_details[i.so_detail]
-				detail["qty"] = detail["so_qty"] * (i.invoicing_percentage / 100)
+    invoice_per = flt(invoice_per) if invoice_per else None
+    so_doc = frappe.get_doc("Sales Order", sales_order)
 
-		return so_details if so_details else None
+    if not so_doc.items:
+        frappe.throw("Sales Order has no items or does not exist.")
+
+    so_details = {}
+    for item in so_doc.items:
+        so_details[item.name] = {
+            "so_detail": item.name,
+            "so_qty": item.qty,
+            "qty": item.qty
+        }
+
+    for item in doc.items:
+        so_detail_key = item.get("so_detail")
+
+        if so_detail_key and so_detail_key in so_details:
+            invoice_percentage = flt(item.get("invoicing_percentage")) or invoice_per
+            if invoice_percentage:
+                so_details[so_detail_key]["qty"] = so_details[so_detail_key]["so_qty"] * (invoice_percentage / 100)
+
+    return so_details if so_details else None

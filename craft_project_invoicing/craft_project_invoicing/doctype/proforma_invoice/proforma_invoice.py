@@ -24,19 +24,24 @@ class ProformaInvoice(Document):
         
         if self.items and self.sales_order:
             for item in self.items:
-                # Fetch previous sales invoice amounts for the same item in the sales order
-                previous_amount = frappe.db.sql("""
-                    SELECT SUM(amount) 
-                    FROM `tabSales Invoice Item` sii
-                    JOIN `tabSales Invoice` si ON sii.parent = si.name
-                    WHERE sii.item_code = %s 
-                    AND si.sales_order = %s 
-                    AND si.docstatus = 1
-                    AND si.name != %s
+                previous_data = frappe.db.sql("""
+                    SELECT SUM(pii.amount), SUM(pii.invoicing_percentage)
+                    FROM `tabProforma Invoice Item` pii
+                    JOIN `tabProforma Invoice` pi ON pii.parent = pi.name
+                    WHERE pii.item_code = %s 
+                    AND pi.sales_order = %s 
+                    AND pi.docstatus = 1
+                    AND pi.name != %s
                 """, (item.item_code, self.sales_order, self.name))
 
-                item.previous_amount = previous_amount[0][0] if previous_amount and previous_amount[0][0] else 0
-                item.cumulative_amount = item.amount + item.previous_amount
+                previous_amount = previous_data[0][0] if previous_data and previous_data[0][0] else 0
+                previous_percentage = previous_data[0][1] if previous_data and previous_data[0][1] else 0
+
+                item.previous_amount = previous_amount
+                item.previous_percentage = previous_percentage
+                item.cumulative_amount = item.amount + previous_amount
+                item.cumulative_percentage = item.invoicing_percentage + previous_percentage
+
 
         if self.taxes and self.sales_order:
             for tax in self.taxes:

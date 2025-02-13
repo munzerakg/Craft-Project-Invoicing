@@ -33,7 +33,8 @@ def create_proforma_invoice(source_name, target_doc=None):
                 "field_map": {                  
                     "name": "against_sales_order",      
                     "customer": "customer",     
-                    "transaction_date": "transaction_date"
+                    "transaction_date": "transaction_date",
+                    "delivery_date" : "delivery_date"
                 }
             },
             "Sales Order Item": {           
@@ -44,7 +45,8 @@ def create_proforma_invoice(source_name, target_doc=None):
                     "rate": "rate",
                     "amount": "amount",
                     "description": "description",
-                    "name": "so_item_detail"
+                    "name": "so_item_detail",
+                    "delivery_date" : "delivery_date"
                     
                 }
             }

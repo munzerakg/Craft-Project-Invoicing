@@ -98,46 +98,145 @@ frappe.ui.form.on('Sales Invoice', {
 		}
 	},
 
-	validate: function (frm) {
-		if (frm.doc.items && frm.doc.items.length > 0) {
-			let promises = [];
-	
-			$.each(frm.doc.items, function (index, row) {
-				if (row.sales_order) {
-					let p = frappe.call({
-						method: "craft_project_invoicing.events.sales_invoice.get_so_detail",
-						args: {
-							"sales_order": row.sales_order,
-							"invoice_per": frm.doc.custom_invoice_percentage,
-							"doc": frm.doc
-						},
-						callback: function (r) {
-							if (r.message) {
-								if (r.message[row.so_detail]) {
-									frappe.model.set_value(row.doctype, row.name, "custom_so_qty", r.message[row.so_detail].so_qty);
-									if (r.message[row.so_detail].qty) {
-										frappe.model.set_value(row.doctype, row.name, "qty", r.message[row.so_detail].qty);
-									}
-								}
-	
-								if (frm.doc.custom_invoice_percentage && !row.invoicing_percentage) {
-									frappe.model.set_value(row.doctype, row.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
-								}
-							}
-						}
-					});
-	
-					promises.push(p);
-				}
-			});
-	
-			Promise.all(promises).then(() => {
-				frm.refresh_field("items");
-			});
-		}
-	},
-	
-	
+	// validate: function (frm) {
+    //     if (frm.doc.items && frm.doc.items.length > 0) {
+    //         let promises = [];
+    
+    //         $.each(frm.doc.items, function (index, row) {
+    //             if (!row.sales_order) return;
+    
+    //             let p = new Promise(resolve => {
+    //                 frappe.call({
+    //                     method: "craft_project_invoicing.events.sales_invoice.get_so_detail",
+    //                     args: {
+    //                         "sales_order": row.sales_order,
+    //                         "invoice_per": frm.doc.custom_invoice_percentage,
+    //                         "doc": frm.doc
+    //                     },
+    //                     callback: function (r) {
+    //                         if (r.message) {
+    //                             if (r.message[row.so_detail]) {
+    //                                 frappe.model.set_value(row.doctype, row.name, "custom_so_qty", r.message[row.so_detail].so_qty);
+    //                                 if (r.message[row.so_detail].qty) {
+    //                                     frappe.model.set_value(row.doctype, row.name, "qty", r.message[row.so_detail].qty);
+    //                                 }
+    //                             }
+    //                             if (frm.doc.custom_invoice_percentage && !row.invoicing_percentage) {
+    //                                 frappe.model.set_value(row.doctype, row.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
+    //                             }
+    //                         }
+    //                         frappe.call({
+    //                             method: "frappe.client.get_value",
+    //                             args: {
+    //                                 doctype: "Sales Order",
+    //                                 filters: { name: row.sales_order },
+    //                                 fieldname: ["advance_percentage", "retention_percentage"]
+    //                             },
+    //                             callback: function (r2) {
+    //                                 if (r2.message) {
+    //                                     let advance_percent = r2.message.advance_percentage || 0;
+    //                                     let retention_percent = r2.message.retention_percentage || 0;
+    //                                     let qty = row.qty || 0;
+    //                                     let rate = row.rate || 0;
+    //                                     let calculated_amount = qty * rate;
+    
+    //                                     frappe.model.set_value(row.doctype, row.name, "advance_percent", advance_percent);
+    //                                     frappe.model.set_value(row.doctype, row.name, "retention_percent", retention_percent);
+    
+    //                                     let advance_amount = (calculated_amount * advance_percent) / 100;
+    //                                     frappe.model.set_value(row.doctype, row.name, "advance_amount", advance_amount);
+    //                                 }
+    //                                 resolve();
+    //                             }
+    //                         });
+    //                     }
+    //                 });
+    //             });
+    //             promises.push(p);
+    //         });
+    
+    //         Promise.all(promises).then(() => {
+    //             frm.refresh_field("items");
+    //         });
+    //     }
+    // }
+
+    validate: async function (frm) {
+        if (!frm.doc.items || frm.doc.items.length === 0) return;
+    
+        let promises = frm.doc.items.map(async (row) => {
+            if (row.sales_order) {
+                let so_detail_resp = await frappe.call({
+                    method: "craft_project_invoicing.events.sales_invoice.get_so_detail",
+                    args: {
+                        sales_order: row.sales_order,
+                        invoice_per: frm.doc.custom_invoice_percentage,
+                        doc: frm.doc
+                    }
+                });
+    
+                if (so_detail_resp.message && so_detail_resp.message[row.so_detail]) {
+                    frappe.model.set_value(row.doctype, row.name, "custom_so_qty", so_detail_resp.message[row.so_detail].so_qty);
+                    if (so_detail_resp.message[row.so_detail].qty) {
+                        frappe.model.set_value(row.doctype, row.name, "qty", so_detail_resp.message[row.so_detail].qty);
+                    }
+                }
+    
+                if (frm.doc.custom_invoice_percentage && !row.invoicing_percentage) {
+                    frappe.model.set_value(row.doctype, row.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
+                }
+    
+                let get_value_resp = await frappe.call({
+                    method: "frappe.client.get_value",
+                    args: {
+                        doctype: "Sales Order",
+                        filters: { name: row.sales_order },
+                        fieldname: ["advance_percentage", "retention_percentage"]
+                    }
+                });
+    
+                if (get_value_resp.message) {
+                    let advance_percent = get_value_resp.message.advance_percentage || 0;
+                    let retention_percent = get_value_resp.message.retention_percentage || 0;
+                    let calculated_amount = (row.qty || 0) * (row.rate || 0);
+    
+                    frappe.model.set_value(row.doctype, row.name, "advance_percent", advance_percent);
+                    frappe.model.set_value(row.doctype, row.name, "retention_percent", retention_percent);
+    
+                    frappe.model.set_value(row.doctype, row.name, "advance_amount", (calculated_amount * advance_percent) / 100);
+                    frappe.model.set_value(row.doctype, row.name, "retention_amount", (calculated_amount * retention_percent) / 100);
+                }
+            }
+        });
+    
+        await Promise.all(promises);
+    
+        let total_advance_amount = frm.doc.items.reduce((sum, row) => {
+            let calculated_amount = (row.qty || 0) * (row.rate || 0);
+            let advance_amount = (calculated_amount * (row.advance_percent || 0)) / 100;
+            return sum + advance_amount;
+        }, 0);
+    
+        let total_retention_amount = frm.doc.items.reduce((sum, row) => {
+            let calculated_amount = (row.qty || 0) * (row.rate || 0);
+            let retention_amount = (calculated_amount * (row.retention_percent || 0)) / 100;
+            return sum + retention_amount;
+        }, 0);
+    
+        if (frm.doc.taxes && frm.doc.taxes.length > 0) {
+            frm.doc.taxes.forEach(tax => {
+                if (tax.is_advance == 1) {
+                    frappe.model.set_value(tax.doctype, tax.name, "tax_amount", -total_advance_amount);
+                }
+                if (tax.is_retention == 1) {
+                    frappe.model.set_value(tax.doctype, tax.name, "tax_amount", -total_retention_amount);
+                }
+            });
+            frm.refresh_field("taxes");
+        }
+    
+        frm.refresh_field("items");
+    }
 });
 
 var set_taxes = function(frm, sales_order) {

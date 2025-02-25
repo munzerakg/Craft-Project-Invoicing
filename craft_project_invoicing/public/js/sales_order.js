@@ -8,15 +8,17 @@ frappe.ui.form.on('Sales Order', {
 		}
 	},
 	advance_percentage: function (frm) {
-		if (frm.doc.advance_percentage) {
-			frm.set_value("on_delivery_percentage", (100 - (frm.doc.advance_percentage + parseFloat(frm.doc.retention_percentage))));
-		}
+		let advance = frm.doc.advance_percentage ? parseFloat(frm.doc.advance_percentage) : 0;
+		let retention = frm.doc.retention_percentage ? parseFloat(frm.doc.retention_percentage) : 0;
+		
+		frm.set_value("on_delivery_percentage", (advance || retention) ? (100 - (advance + retention)) : 0);
 	},
-
+	
 	retention_percentage: function (frm) {
-		if (frm.doc.advance_percentage) {
-			frm.set_value("on_delivery_percentage", (100 - (frm.doc.advance_percentage + parseFloat(frm.doc.retention_percentage))));
-		}
+		let advance = frm.doc.advance_percentage ? parseFloat(frm.doc.advance_percentage) : 0;
+		let retention = frm.doc.retention_percentage ? parseFloat(frm.doc.retention_percentage) : 0;
+		
+		frm.set_value("on_delivery_percentage", (advance || retention) ? (100 - (advance + retention)) : 0);
 	},
 
 	onload: function (frm) {

@@ -130,51 +130,51 @@ def on_submit(doc, method):
 				})
 
 
-def validate(doc, method):
-    if doc.items and doc.sales_order:
-        for item in doc.items:
-            previous_data = frappe.db.sql("""
-                SELECT SUM(sii.amount), SUM(sii.invoicing_percentage)
-                FROM `tabSales Invoice Item` sii
-                JOIN `tabSales Invoice` si ON sii.parent = si.name
-                WHERE sii.item_code = %s 
-                AND si.sales_order = %s 
-                AND si.docstatus = 1
-                AND si.name != %s
-            """, (item.item_code, doc.sales_order, doc.name))
+# def validate(doc, method):
+#     if doc.items and doc.sales_order:
+#         for item in doc.items:
+#             previous_data = frappe.db.sql("""
+#                 SELECT SUM(sii.amount), SUM(sii.invoicing_percentage)
+#                 FROM `tabSales Invoice Item` sii
+#                 JOIN `tabSales Invoice` si ON sii.parent = si.name
+#                 WHERE sii.item_code = %s 
+#                 AND si.sales_order = %s 
+#                 AND si.docstatus = 1
+#                 AND si.name != %s
+#             """, (item.item_code, doc.sales_order, doc.name))
 
-            previous_amount = previous_data[0][0] if previous_data and previous_data[0][0] else 0
-            previous_percentage = previous_data[0][1] if previous_data and previous_data[0][1] else 0
+#             previous_amount = previous_data[0][0] if previous_data and previous_data[0][0] else 0
+#             previous_percentage = previous_data[0][1] if previous_data and previous_data[0][1] else 0
 
-            item.previous_amount = previous_amount
-            item.previous_percentage = previous_percentage
-            item.cumulative_amount = item.amount + previous_amount
-            item.cumulative_percentage = item.invoicing_percentage + previous_percentage
+#             item.previous_amount = previous_amount
+#             item.previous_percentage = previous_percentage
+#             item.cumulative_amount = item.amount + previous_amount
+#             item.cumulative_percentage = item.invoicing_percentage + previous_percentage
 
 
 
-    if doc.taxes and doc.sales_order:
-        for tax in doc.taxes:
-            condition = ""
-            params = [doc.sales_order, doc.name]
+#     if doc.taxes and doc.sales_order:
+#         for tax in doc.taxes:
+#             condition = ""
+#             params = [doc.sales_order, doc.name]
 
-            if tax.is_advance:
-                condition = "AND stc.is_advance = 1"
-            elif tax.is_retention:
-                condition = "AND stc.is_retention = 1"
+#             if tax.is_advance:
+#                 condition = "AND stc.is_advance = 1"
+#             elif tax.is_retention:
+#                 condition = "AND stc.is_retention = 1"
 
-            previous_tax_amount = frappe.db.sql(f"""
-                SELECT SUM(tax_amount) 
-                FROM `tabSales Taxes and Charges` stc
-                JOIN `tabSales Invoice` si ON stc.parent = si.name
-                WHERE si.sales_order = %s 
-                AND si.docstatus = 1
-                AND si.name != %s
-                {condition}
-            """, tuple(params))
+#             previous_tax_amount = frappe.db.sql(f"""
+#                 SELECT SUM(tax_amount) 
+#                 FROM `tabSales Taxes and Charges` stc
+#                 JOIN `tabSales Invoice` si ON stc.parent = si.name
+#                 WHERE si.sales_order = %s 
+#                 AND si.docstatus = 1
+#                 AND si.name != %s
+#                 {condition}
+#             """, tuple(params))
 
-            tax.previous_amount = previous_tax_amount[0][0] if previous_tax_amount and previous_tax_amount[0][0] else 0
-            tax.cumulative_amount = tax.tax_amount + tax.previous_amount
+#             tax.previous_amount = previous_tax_amount[0][0] if previous_tax_amount and previous_tax_amount[0][0] else 0
+#             tax.cumulative_amount = tax.tax_amount + tax.previous_amount
 
 
 
@@ -286,3 +286,11 @@ def get_so_detail(sales_order, invoice_per=None, doc=None):
                 so_details[so_detail_key]["qty"] = so_details[so_detail_key]["so_qty"] * (invoice_percentage / 100)
 
     return so_details if so_details else None
+
+
+@frappe.whitelist()
+def get_invoice_items(invoice_names, item_code, sales_order):
+    invoice_names = frappe.parse_json(invoice_names)
+    return frappe.get_all("Sales Invoice Item", 
+                          filters={"parent": ["in", invoice_names], "item_code": item_code, "sales_order": sales_order},
+                          fields=["amount", "invoicing_percentage","advance_amount","balance_amount_ad","retention_amount","balance_amount_ret"])

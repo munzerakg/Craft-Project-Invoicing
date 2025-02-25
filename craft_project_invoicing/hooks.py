@@ -33,6 +33,22 @@ fixtures = [
                          "Sales Invoice Item-custom_column_break_n5gct",
                          "Sales Invoice Item-custom_cumulative_percentage",
                          "Sales Invoice Item-custom_previous_invoicing_",
+						 "Sales Invoice Item-custom_column_break_8v7u9",
+                         "Sales Invoice Item-custom_retention_details",
+                         "Sales Invoice Item-custom_previous_balance_amount_ret",
+                         "Sales Invoice Item-custom_previous_retention_amount",
+						 "Sales Invoice Item-custom_cumulative_retention",
+                         "Sales Invoice Item-custom_previous_advance_amount",
+                         "Sales Invoice Item-custom_previous_balance_amount_ad",
+                         "Sales Invoice Item-custom_cumulative_advance",
+                         "Sales Invoice Item-custom_column_break_vv9z9",
+                         "Sales Invoice Item-custom_balance_amount_ret",
+                         "Sales Invoice Item-custom_balance_amount_ad",
+                         "Sales Invoice Item-custom_retention_",
+                         "Sales Invoice Item-custom_advance_amount",
+                         "Sales Invoice Item-custom_retention_amount",
+                         "Sales Invoice Item-custom_advance_",
+                         "Sales Invoice Item-custom_section_break_ohveg",
                          
 						 #Sales Taxes and Charges
                          
@@ -209,7 +225,7 @@ doc_events = {
 	"Sales Invoice": {
 		"on_submit": "craft_project_invoicing.events.sales_invoice.on_submit",
 		"on_cancel": "craft_project_invoicing.events.sales_invoice.on_cancel",
-        "validate": "craft_project_invoicing.events.sales_invoice.validate",
+        # "validate": "craft_project_invoicing.events.sales_invoice.validate",
 
 	}
 }

@@ -2,17 +2,75 @@ import frappe
 from frappe.utils import flt
 
 
+
+def validate(doc, method=None):
+        sales_order = frappe.get_doc("Sales Order", doc.sales_order)
+
+        # so_total = sales_order.total  
+        # si_total = doc.total 
+
+        # if si_total > so_total:
+        #     frappe.throw(f"The total amount in Proforma Invoice ({si_total}) cannot exceed the Sales Order total ({so_total}).")
+        
+        if doc.items and doc.sales_order:
+            for item in doc.items:
+                previous_data = frappe.db.sql("""
+                    SELECT SUM(sii.amount), SUM(sii.invoicing_percentage)
+                    FROM `tabSales Invoice Item` sii
+                    JOIN `tabSales Invoice` si ON sii.parent = si.name
+                    WHERE sii.item_code = %s 
+                    AND si.sales_order = %s 
+                    AND si.docstatus = 1
+                    AND si.name != %s
+                """, (item.item_code, doc.sales_order, doc.name))
+
+                previous_amount = previous_data[0][0] if previous_data and previous_data[0][0] else 0
+                previous_percentage = previous_data[0][1] if previous_data and previous_data[0][1] else 0
+
+                item.previous_amount = previous_amount
+                item.previous_percentage = previous_percentage
+                item.cumulative_amount = flt(item.amount) + flt(previous_amount)
+                item.cumulative_percentage = flt(item.invoicing_percentage) + flt(previous_percentage)
+
+
+        if doc.taxes and doc.sales_order:
+            for tax in doc.taxes:
+                condition = ""
+                params = [doc.sales_order, doc.name]
+
+                if tax.is_advance:
+                    condition = "AND stc.is_advance = 1"
+                elif tax.is_retention:
+                    condition = "AND stc.is_retention = 1"
+
+                previous_tax_amount = frappe.db.sql(f"""
+                    SELECT SUM(tax_amount) 
+                    FROM `tabSales Taxes and Charges` stc
+                    JOIN `tabSales Invoice` si ON stc.parent = si.name
+                    WHERE si.sales_order = %s 
+                    AND si.docstatus = 1
+                    AND si.name != %s
+                    {condition}
+                """, tuple(params))
+
+                tax.previous_amount = previous_tax_amount[0][0] if previous_tax_amount and previous_tax_amount[0][0] else 0
+                tax.cumulative_amount = tax.tax_amount + tax.previous_amount
+
 def on_submit(doc, method):
 	if doc.items and doc.sales_order:
 		so_doc = frappe.get_doc("Sales Order", doc.sales_order)
 		if so_doc.enable_project_invoicing:
+			retention_item_code = frappe.db.get_value("Item", {"item_name": "Retention"}, "name")
+			advance_item_code = frappe.db.get_value("Item", {"item_name": "Advance"}, "name")
+			# Now get the income accounts using the correct item_code
 			retention_account = frappe.db.get_value(
-				"Item Default", {"parent": "Retention", "company": doc.company}, "income_account")
+				"Item Default", {"parent": retention_item_code, "company": doc.company}, "income_account")
+
 			adv_account = frappe.db.get_value(
-				"Item Default", {"parent": "Advance", "company": doc.company}, "income_account")
+    			"Item Default", {"parent": advance_item_code, "company": doc.company}, "income_account")
 
 			# Post reverse journal entry for advance invoice
-			if doc.items and len(doc.items) == 1 and doc.items[0].item_code == "Advance":
+			if doc.items and len(doc.items) == 1 and doc.items[0].item_name == "Advance":
 				if not adv_account:
 					frappe.throw(
 						title="Advance Account Not Found",
@@ -54,7 +112,7 @@ def on_submit(doc, method):
 				})
 
 			# Post reverse journal entry for on Retention invoice
-			elif doc.items and len(doc.items) == 1 and doc.items[0].item_code == "Retention":
+			elif doc.items and len(doc.items) == 1 and doc.items[0].item_name == "Retention":
 				if not retention_account:
 					frappe.throw(
 						title="Retention Account Not Found",
@@ -201,17 +259,17 @@ def on_cancel(doc, method):
 		so_doc = frappe.get_doc("Sales Order", doc.sales_order)
 		if so_doc.enable_project_invoicing:
 			delivery_ref_docs = None
-			if doc.items and len(doc.items) == 1 and doc.items[0].item_code in ["Advance", "Retention"]:
+			if doc.items and len(doc.items) == 1 and doc.items[0].item_name in ["Advance", "Retention"]:
 				frappe.db.set_value("Sales Order", doc.sales_order, {
-					invoice_type.get(doc.items[0].item_code): 0,
-					invoice_references.get(doc.items[0].item_code): "",
-					billing_amounts.get(doc.items[0].item_code): 0
+					invoice_type.get(doc.items[0].item_name): 0,
+					invoice_references.get(doc.items[0].item_name): "",
+					billing_amounts.get(doc.items[0].item_name): 0
 				})
-				if doc.items[0].item_code == "Retention":
-					frappe.db.set_value("Sales Order", doc.sales_order, {
-						"remaining_retention": float(so_doc.remaining_retention) - (doc.items[0].get("amount") if doc.items[0].get("amount") else 0)
-					})
-			elif doc.items and len(doc.items) > 0 and not doc.items[0].item_code in ["Advance", "Retention"]:
+				# if doc.items[0].item_name == "Retention":
+				# 	frappe.db.set_value("Sales Order", doc.sales_order, {
+				# 		"remaining_retention": float(so_doc.remaining_retention) - (doc.items[0].get("amount") if doc.items[0].get("amount") else 0)
+				# 	})
+			elif doc.items and len(doc.items) > 0 and not doc.items[0].item_name in ["Advance", "Retention"]:
 				frappe.db.set_value(
 					"Sales Order", doc.sales_order, "on_delivery_billed", 0)
 				delivery_ref_docs = frappe.db.get_value(
@@ -294,3 +352,80 @@ def get_invoice_items(invoice_names, item_code, sales_order):
     return frappe.get_all("Sales Invoice Item", 
                           filters={"parent": ["in", invoice_names], "item_code": item_code, "sales_order": sales_order},
                           fields=["amount", "invoicing_percentage","advance_amount","balance_amount_ad","retention_amount","balance_amount_ret"])
+
+
+
+@frappe.whitelist()
+def validate_invoice_percentage_total(
+    sales_order,
+    current_invoice=None,
+    custom_invoice_percentage=0,
+    items=None,
+):
+    import json
+    from frappe.utils import flt
+
+    if isinstance(items, str):
+        items = json.loads(items)
+    items = items or []
+
+    prev_invoice_names = frappe.get_all(
+        "Sales Invoice",
+        filters={
+            "sales_order": sales_order,
+            "docstatus": 1,
+            "name": ["!=", current_invoice],
+        },
+        pluck="name",
+    )
+
+    total_percentage = sum([
+        flt(frappe.db.get_value("Sales Invoice", inv, "custom_invoice_percentage"))
+        for inv in prev_invoice_names
+    ])
+
+    total_percentage += flt(custom_invoice_percentage)
+
+    prev_item_rows = frappe.db.sql(
+        """
+        SELECT
+            sii.so_detail,
+            sii.item_code,
+            SUM(COALESCE(sii.invoicing_percentage, 0)) AS total_perc
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE
+            si.sales_order = %s
+            AND si.docstatus = 1
+            AND si.name != %s
+        GROUP BY sii.so_detail, sii.item_code
+        """,
+        (sales_order, current_invoice or ""),
+        as_dict=True,
+    )
+
+    prev_item_totals = {
+        (r.so_detail or r.item_code): flt(r.total_perc) for r in prev_item_rows
+    }
+
+    items_exceeding = []
+
+    for it in items:
+        key = it.get("so_detail") or it.get("sales_order_item") or it.get("item_code")
+        current_item_perc = flt(it.get("invoicing_percentage", custom_invoice_percentage))
+        prev_item_perc = flt(prev_item_totals.get(key, 0))
+        total_item_perc = prev_item_perc + current_item_perc
+
+        if total_item_perc > 100:
+            items_exceeding.append({
+                "so_detail": key,
+                "item_code": it.get("item_code"),
+                "prev": prev_item_perc,
+                "current": current_item_perc,
+                "total": total_item_perc,
+            })
+
+    return {
+        "total_invoice_percent": total_percentage,
+        "items_exceeding": items_exceeding,
+    }

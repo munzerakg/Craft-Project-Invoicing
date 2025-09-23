@@ -1,4 +1,43 @@
 frappe.ui.form.on('Sales Invoice', {
+    // custom_invoice_percentage:function(frm){
+    //     if (frm.doc.custom_invoice_percentage > 100) {
+    //         frappe.throw(__("Invoice percentage cannot be greater than 100"));
+    //     }
+
+    //     if (frm.doc.sales_order && frm.doc.custom_invoice_percentage) {
+    //         frappe.call({
+    //             method: "frappe.get_list",
+    //             args: {
+    //                 doctype: "Sales Invoice",
+    //                 filters: {
+    //                     sales_order: frm.doc.sales_order,
+    //                     docstatus: 1,
+    //                     name: ["!=", frm.doc.name]  // Exclude current invoice
+    //                 },
+    //                 fields: ["name"]
+    //             },
+    //             callback: function (r) {
+    //                 if (r.message && r.message.length > 0) {
+    //                     let invoice_names = r.message.map(d => d.name);
+
+    //                     frappe.call({
+    //                         method: "craft_project_invoicing.events.sales_invoice.get_invoice_percentage_sum",
+    //                         args: {
+    //                             invoice_names: invoice_names
+    //                         },
+    //                         callback: function (res) {
+    //                             let previous_total = flt(res.message || 0);
+    //                             let new_total = previous_total + flt(frm.doc.custom_invoice_percentage);
+    //                             if (new_total > 100) {
+    //                                 frappe.throw(__("Total invoice percentage exceeds 100%. Currently: {0}%", [new_total]));
+    //                             }
+    //                         }
+    //                     });
+    //                 }
+    //             }
+    //         });
+    //     }
+    // },
 	onload_post_render: function (frm) {
 		if (frm.doc.sales_order && frm.doc.__islocal) {
 			frappe.db.get_doc("Sales Order", frm.doc.sales_order)
@@ -14,7 +53,13 @@ frappe.ui.form.on('Sales Invoice', {
 
 						// Advance Billing
 						if (!doc.advance_billed && doc.advance_percentage && doc.base_net_total) {
-							frappe.db.get_doc("Item", "Advance")
+							frappe.db.get_value("Item", { item_name: "Advance" }, "name")
+								.then(res => {
+									if (!res.message || !res.message.name) {
+										frappe.throw(__("Item with item name 'Advance' not found."));
+									}
+									return frappe.db.get_doc("Item", res.message.name);
+								})
 								.then(item_doc => {
 									let income_account = '';
 									$.each(item_doc.item_defaults, function (k, i) {
@@ -40,11 +85,17 @@ frappe.ui.form.on('Sales Invoice', {
 									frm.trigger('rate', row.doctype, row.name);
 									frm.refresh_fields("items");
 								});
-								set_taxes(frm, frm.doc.sales_order);
+							set_taxes(frm, frm.doc.sales_order);
 						}
 						// Retention Billing
 						else if (doc.advance_billed && doc.on_delivery_billed && !doc.retention_billed && doc.retention_percentage && doc.base_net_total) {
-							frappe.db.get_doc("Item", "Retention")
+							frappe.db.get_value("Item", { item_name: "Retention" }, "name")
+								.then(res => {
+									if (!res.message || !res.message.name) {
+										frappe.throw(__("Item with item name 'Retention' not found."));
+									}
+									return frappe.db.get_doc("Item", res.message.name);
+								})
 								.then(item_doc => {
 									let income_account = '';
 									$.each(item_doc.item_defaults, function (k, i) {
@@ -163,7 +214,54 @@ frappe.ui.form.on('Sales Invoice', {
 
     validate: async function (frm) {
         if (!frm.doc.items || frm.doc.items.length === 0) return;
-    
+
+        if (frm.doc.custom_invoice_percentage && frm.doc.custom_invoice_percentage > 100) {
+            frappe.throw(__("Invoice percentage cannot be greater than 100"));
+        }
+
+        frm.doc.items.forEach(row => {
+            if (row.invoicing_percentage && row.invoicing_percentage > 100) {
+                frappe.throw(__("Row #{0}: Invoicing Percentage cannot be greater than 100%", [row.idx]));
+            }
+        });
+
+        
+        if (frm.doc.sales_order && frm.doc.custom_invoice_percentage) {
+            const items_payload = (frm.doc.items || []).map(d => ({
+                so_detail: d.so_detail || d.sales_order_item,
+                item_code: d.item_code,
+                invoicing_percentage: flt(d.invoicing_percentage || frm.doc.custom_invoice_percentage)
+            }));
+
+            const res = await frappe.call({
+                method: "craft_project_invoicing.events.sales_invoice.validate_invoice_percentage_total",
+                args: {
+                    sales_order: frm.doc.sales_order,
+                    current_invoice: frm.doc.name,
+                    custom_invoice_percentage: frm.doc.custom_invoice_percentage,
+                    items: items_payload
+                }
+            });
+
+            const out = res.message || {};
+            const total_invoice_percent = flt(out.total_invoice_percent);
+
+            if (total_invoice_percent > 100) {
+                frappe.throw(__("Total invoice percentage exceeds 100%. Currently: {0}%", [total_invoice_percent]));
+            }
+
+            if (out.items_exceeding && out.items_exceeding.length > 0) {
+                const lines = out.items_exceeding.map((d, idx) =>
+                    `Row #${idx + 1}: Invoicing percentage exceeds 100%.<br>` +
+                    `Total : <b>${d.total}%</b> (Current: ${d.current}%, Previous: ${d.prev}%)`
+                );
+                frappe.throw(lines.join("<br><br>"));
+            }
+
+
+
+        }
+
         let promises = frm.doc.items.map(async (row) => {
             if (row.sales_order) {
                 let so_detail_resp = await frappe.call({

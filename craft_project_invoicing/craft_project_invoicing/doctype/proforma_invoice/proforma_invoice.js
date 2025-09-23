@@ -1423,35 +1423,53 @@ frappe.ui.form.on('Proforma Invoice', {
                             frm.set_value("advance_percentage",remaining_percentage)
 
                             if (!doc.advance_billed && remaining_percentage > 0 && doc.base_net_total) {
-                                frappe.db.get_doc("Item", "Advance")
-                                    .then(item_doc => {
-                                        let income_account = '';
-                                        $.each(item_doc.item_defaults, function (k, i) {
-                                            if (i.company == frm.doc.company) {
-                                                income_account = i.income_account;
-                                            }
-                                        });
+								frappe.db.get_list("Item", {
+									filters: { item_name: "Advance" },
+									limit: 1
+								}).then(res => {
+									if (res.length > 0) {
+										frappe.db.get_doc("Item", res[0].name).then(item_doc => {
+											let income_account = '';
 
-                                        let rate = doc.base_net_total * (remaining_percentage / 100);
-                                        frm.clear_table("items");
-                                        let row = frm.add_child("items", {
-                                            item_code: item_doc.name,
-                                            item_name: item_doc.item_name,
-                                            rate: rate,
-                                            qty: 1,
-                                            conversion_factor: 1,
-                                            uom: item_doc.stock_uom,
-                                            description: item_doc.description,
-                                            sales_order: doc.sales_order,
-                                            income_account: income_account,
-                                            project: frm.doc.project,
-                                            cost_center: frm.doc.cost_center
-                                        });
-                                        frm.trigger('rate', row.doctype, row.name);
-                                        frm.refresh_fields("items");
-                                    });
-                                set_taxes(frm, frm.doc.sales_order);
-                            }
+											// Get income account for the current company
+											(item_doc.item_defaults || []).forEach(i => {
+												if (i.company === frm.doc.company) {
+													income_account = i.income_account;
+												}
+											});
+
+											const rate = doc.base_net_total * (remaining_percentage / 100);
+
+											frm.clear_table("items");
+											const row = frm.add_child("items", {
+												item_code: item_doc.name,
+												item_name: item_doc.item_name,
+												rate: rate,
+												qty: 1,
+												conversion_factor: 1,
+												uom: item_doc.stock_uom,
+												description: item_doc.description,
+												sales_order: doc.sales_order,
+												income_account: income_account,
+												project: frm.doc.project,
+												cost_center: frm.doc.cost_center,
+												delivery_date : item_doc.delivery_date || doc.delivery_date
+											});
+
+											frm.trigger('rate', row.doctype, row.name);
+											frm.refresh_fields("items");
+
+											// Set taxes if not already set
+											if (!frm.doc.taxes_and_charges) {
+												set_taxes(frm, frm.doc.sales_order);
+											}
+										});
+									} else {
+										frappe.msgprint(__('Item with item name "Advance" not found.'));
+									}
+								});
+							}
+
 
 						// if (!doc.advance_billed && doc.advance_percentage && doc.base_net_total) {
 						// 	frappe.db.get_doc("Item", "Advance")
@@ -1483,37 +1501,62 @@ frappe.ui.form.on('Proforma Invoice', {
 						// 		set_taxes(frm, frm.doc.sales_order);
 						// }
 						// Retention Billing
-						else if (doc.advance_billed && doc.on_delivery_billed && !doc.retention_billed && doc.retention_percentage && doc.base_net_total) {
-							frappe.db.get_doc("Item", "Retention")
-								.then(item_doc => {
-									let income_account = '';
-									$.each(item_doc.item_defaults, function (k, i) {
-										if (i.company == frm.doc.company) {
-											income_account = i.income_account;
+						else if (
+							doc.advance_billed &&
+							doc.on_delivery_billed &&
+							!doc.retention_billed &&
+							doc.retention_percentage &&
+							doc.base_net_total
+						) {
+							frappe.db.get_list("Item", {
+								filters: { item_name: "Retention" },
+								limit: 1
+							}).then(res => {
+								if (res.length > 0) {
+									frappe.db.get_doc("Item", res[0].name).then(item_doc => {
+										let income_account = '';
+
+										// Get income account based on company
+										(item_doc.item_defaults || []).forEach(i => {
+											if (i.company === frm.doc.company) {
+												income_account = i.income_account;
+											}
+										});
+
+										// Calculate retention amount
+										const rate = doc.base_net_total * (doc.retention_percentage / 100);
+
+										// Add item row
+										frm.clear_table("items");
+										const row = frm.add_child("items", {
+											item_code: item_doc.name,
+											item_name: item_doc.item_name,
+											rate: rate,
+											qty: 1,
+											conversion_factor: 1,
+											uom: item_doc.stock_uom,
+											description: item_doc.description,
+											sales_order: doc.sales_order,
+											income_account: income_account,
+											project: frm.doc.project,
+											cost_center: frm.doc.cost_center,
+											delivery_date : item_doc.delivery_date || doc.delivery_date
+										});
+
+										frm.trigger('rate', row.doctype, row.name);
+										frm.refresh_fields("items");
+
+										// Set taxes if not already set
+										if (!frm.doc.taxes_and_charges) {
+											set_taxes(frm, frm.doc.sales_order);
 										}
 									});
-									let rate = doc.base_net_total * (doc.retention_percentage / 100);
-									frm.clear_table("items");
-									let row = frm.add_child("items", {
-										item_code: item_doc.name,
-										item_name: item_doc.item_name,
-										rate: rate,
-										qty: 1,
-										conversion_factor: 1,
-										uom: item_doc.stock_uom,
-										description: item_doc.description,
-										sales_order: doc.sales_order,
-										income_account: income_account,
-										project: frm.doc.project,
-										cost_center: frm.doc.cost_center
-									});
-									frm.trigger('rate', row.doctype, row.name);
-									frm.refresh_fields("items");
-									if (!frm.doc.taxes_and_charges) {
-										set_taxes(frm, frm.doc.sales_order);
-									}
-								});
-						} else {
+								} else {
+									frappe.msgprint(__('Item with item name "Retention" not found.'));
+								}
+							});
+						}
+						else {
 							// frappe.db.get_value("Company", frm.doc.company, "project_invoicing_tax_template")
 							// 	.then(r => {
 							// 		if (r.message) {
@@ -1574,34 +1617,129 @@ frappe.ui.form.on('Proforma Invoice', {
 	},
 
 	
-	validate: function (frm) {
-		if (frm.doc.items && frm.doc.items.length > 0 && frm.doc.items[0].sales_order) {
-			frappe.call({
-				method: "craft_project_invoicing.craft_project_invoicing.doctype.proforma_invoice.proforma_invoice.get_so_detail",
-				args: {
-					"sales_order": frm.doc.items[0].sales_order,
-					"invoice_per": frm.doc.custom_invoice_percentage,
-					"doc": frm.doc
-				},
-				callback: function (r) {
-					if (r.message) {
-						$.each(frm.doc.items, function (k, i) {
-							if (r.message[i.so_item_detail]) {
-								frappe.model.set_value(i.doctype, i.name, "custom_so_qty", r.message[i.so_item_detail].so_qty);
-								if (r.message[i.so_item_detail].qty) {
-									frappe.model.set_value(i.doctype, i.name, "qty", r.message[i.so_item_detail].qty);
-								}
-							}
-	
-							if (frm.doc.custom_invoice_percentage && !i.invoicing_percentage) {
-								frappe.model.set_value(i.doctype, i.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
-							}
-						});
-					}
-				}
-			});
-		}
-	},
+	validate: async function (frm) {
+        if (!frm.doc.items || frm.doc.items.length === 0) return;
+
+        if (frm.doc.custom_invoice_percentage && frm.doc.custom_invoice_percentage > 100) {
+            frappe.throw(__("Invoice percentage cannot be greater than 100"));
+        }
+
+        frm.doc.items.forEach(row => {
+            if (row.invoicing_percentage && row.invoicing_percentage > 100) {
+                frappe.throw(__("Row #{0}: Invoicing Percentage cannot be greater than 100%", [row.idx]));
+            }
+        });
+
+        
+        if (frm.doc.sales_order && frm.doc.custom_invoice_percentage) {
+            const items_payload = (frm.doc.items || []).map(d => ({
+                so_item_detail: d.so_item_detail || d.sales_order_item,
+                item_code: d.item_code,
+                invoicing_percentage: flt(d.invoicing_percentage || frm.doc.custom_invoice_percentage)
+            }));
+
+            const res = await frappe.call({
+                method: "craft_project_invoicing.craft_project_invoicing.doctype.proforma_invoice.proforma_invoice.validate_invoice_percentage_total",
+                args: {
+                    sales_order: frm.doc.sales_order,
+                    current_invoice: frm.doc.name,
+                    custom_invoice_percentage: frm.doc.custom_invoice_percentage,
+                    items: items_payload
+                }
+            });
+
+            const out = res.message || {};
+            const total_invoice_percent = flt(out.total_invoice_percent);
+
+            if (total_invoice_percent > 100) {
+                frappe.throw(__("Total invoice percentage exceeds 100%. Currently: {0}%", [total_invoice_percent]));
+            }
+
+            if (out.items_exceeding && out.items_exceeding.length > 0) {
+                const lines = out.items_exceeding.map((d, idx) =>
+                    `Row #${idx + 1}: Invoicing percentage exceeds 100%.<br>` +
+                    `Total : <b>${d.total}%</b> (Current: ${d.current}%, Previous: ${d.prev}%)`
+                );
+                frappe.throw(lines.join("<br><br>"));
+            }
+
+
+
+        }
+
+        let promises = frm.doc.items.map(async (row) => {
+            if (row.sales_order) {
+                let so_item_detail_resp = await frappe.call({
+                    method: "craft_project_invoicing.craft_project_invoicing.doctype.proforma_invoice.proforma_invoice.get_so_item_detail",
+                    args: {
+                        sales_order: row.sales_order,
+                        invoice_per: frm.doc.custom_invoice_percentage,
+                        doc: frm.doc
+                    }
+                });
+    
+                if (so_item_detail_resp.message && so_item_detail_resp.message[row.so_item_detail]) {
+                    frappe.model.set_value(row.doctype, row.name, "custom_so_qty", so_item_detail_resp.message[row.so_item_detail].so_qty);
+                    if (so_item_detail_resp.message[row.so_item_detail].qty) {
+                        frappe.model.set_value(row.doctype, row.name, "qty", so_item_detail_resp.message[row.so_item_detail].qty);
+                    }
+                }
+    
+                if (frm.doc.custom_invoice_percentage && !row.invoicing_percentage) {
+                    frappe.model.set_value(row.doctype, row.name, "invoicing_percentage", frm.doc.custom_invoice_percentage);
+                }
+    
+                let get_value_resp = await frappe.call({
+                    method: "frappe.client.get_value",
+                    args: {
+                        doctype: "Sales Order",
+                        filters: { name: row.sales_order },
+                        fieldname: ["advance_percentage", "retention_percentage"]
+                    }
+                });
+    
+                if (get_value_resp.message) {
+                    let advance_percent = get_value_resp.message.advance_percentage || 0;
+                    let retention_percent = get_value_resp.message.retention_percentage || 0;
+                    let calculated_amount = (row.qty || 0) * (row.rate || 0);
+    
+                    frappe.model.set_value(row.doctype, row.name, "advance_percent", advance_percent);
+                    frappe.model.set_value(row.doctype, row.name, "retention_percent", retention_percent);
+    
+                    frappe.model.set_value(row.doctype, row.name, "advance_amount", (calculated_amount * advance_percent) / 100);
+                    frappe.model.set_value(row.doctype, row.name, "retention_amount", (calculated_amount * retention_percent) / 100);
+                }
+            }
+        });
+    
+        await Promise.all(promises);
+    
+        let total_advance_amount = frm.doc.items.reduce((sum, row) => {
+            let calculated_amount = (row.qty || 0) * (row.rate || 0);
+            let advance_amount = (calculated_amount * (row.advance_percent || 0)) / 100;
+            return sum + advance_amount;
+        }, 0);
+    
+        let total_retention_amount = frm.doc.items.reduce((sum, row) => {
+            let calculated_amount = (row.qty || 0) * (row.rate || 0);
+            let retention_amount = (calculated_amount * (row.retention_percent || 0)) / 100;
+            return sum + retention_amount;
+        }, 0);
+    
+        if (frm.doc.taxes && frm.doc.taxes.length > 0) {
+            frm.doc.taxes.forEach(tax => {
+                if (tax.is_advance == 1) {
+                    frappe.model.set_value(tax.doctype, tax.name, "tax_amount", -total_advance_amount);
+                }
+                if (tax.is_retention == 1) {
+                    frappe.model.set_value(tax.doctype, tax.name, "tax_amount", -total_retention_amount);
+                }
+            });
+            frm.refresh_field("taxes");
+        }
+    
+        frm.refresh_field("items");
+    }
 });
 
 var set_taxes = function(frm, sales_order) {

@@ -225,7 +225,7 @@ doc_events = {
 	"Sales Invoice": {
 		"on_submit": "craft_project_invoicing.events.sales_invoice.on_submit",
 		"on_cancel": "craft_project_invoicing.events.sales_invoice.on_cancel",
-        # "validate": "craft_project_invoicing.events.sales_invoice.validate",
+        "validate": "craft_project_invoicing.events.sales_invoice.validate",
 
 	}
 }

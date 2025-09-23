@@ -11,9 +11,15 @@ from erpnext.stock.doctype.item.item import get_item_defaults
 from erpnext.setup.doctype.item_group.item_group import get_item_group_defaults
 from frappe.model.mapper import get_mapped_doc
 
-
 class ProformaInvoice(Document):
     def validate(self):
+        if not self.delivery_date:
+            return
+
+        for item in self.items:
+            if not item.delivery_date:
+                item.delivery_date = self.delivery_date
+  
         sales_order = frappe.get_doc("Sales Order", self.sales_order)
 
         so_total = sales_order.total  
@@ -39,8 +45,8 @@ class ProformaInvoice(Document):
 
                 item.previous_amount = previous_amount
                 item.previous_percentage = previous_percentage
-                item.cumulative_amount = item.amount + previous_amount
-                item.cumulative_percentage = item.invoicing_percentage + previous_percentage
+                item.cumulative_amount = flt(item.amount) + flt(previous_amount)
+                item.cumulative_percentage = flt(item.invoicing_percentage) + flt(previous_percentage)
 
 
         if self.taxes and self.sales_order:
@@ -137,7 +143,7 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 			"Proforma Invoice Item": {
 				"doctype": "Sales Invoice Item",
 				"field_map": {
-					"so_detail": "so_detail",
+					"so_item_detail": "so_detail",
 					"sales_order": "sales_order",
                     "parent": "custom_proforma_invoice",
                     "name": "custom_proforma_invoice_item"
@@ -177,7 +183,7 @@ def on_submit(doc, method):
                 "Item Default", {"parent": "Advance", "company": doc.company}, "income_account")
 
             # Handle reverse journal entry for advance invoice
-            if doc.items and len(doc.items) == 1 and doc.items[0].item_code == "Advance":
+            if doc.items and len(doc.items) == 1 and doc.items[0].item_name == "Advance":
                 if not adv_account:
                     frappe.throw(
                         title="Advance Account Not Found",
@@ -217,7 +223,7 @@ def on_submit(doc, method):
                 })
 
             # Handle reverse journal entry for retention invoice
-            elif doc.items and len(doc.items) == 1 and doc.items[0].item_code == "Retention":
+            elif doc.items and len(doc.items) == 1 and doc.items[0].item_name == "Retention":
                 if not retention_account:
                     frappe.throw(
                         title="Retention Account Not Found",
@@ -348,7 +354,7 @@ def on_submit(doc, method):
 
 
 @frappe.whitelist()
-def get_so_detail(sales_order, invoice_per=None, doc=None):
+def get_so_item_detail(sales_order, invoice_per=None, doc=None):
 	import json
 	if not sales_order:
 		return
@@ -362,7 +368,7 @@ def get_so_detail(sales_order, invoice_per=None, doc=None):
 			invoice_per = flt(invoice_per)
 
 		so_doc = frappe.get_doc("Sales Order", sales_order)
-		so_details = {}
+		so_item_details = {}
 		if so_doc and so_doc.items:
 			for item in so_doc.items:
 				detail_dict = frappe._dict({
@@ -370,11 +376,142 @@ def get_so_detail(sales_order, invoice_per=None, doc=None):
 					"so_qty": item.qty,
 					"qty": item.qty * (invoice_per/100) if invoice_per else item.qty
 				})
-				so_details[item.name] = detail_dict
+				so_item_details[item.name] = detail_dict
 		for i in doc.items:
 			if i.invoicing_percentage and i.so_item_detail:
-				detail = so_details[i.so_item_detail]
+				detail = so_item_details[i.so_item_detail]
 				detail["qty"] = detail["so_qty"] * (i.invoicing_percentage / 100)
 
-		return so_details if so_details else None
+		return so_item_details if so_item_details else None
 
+
+
+
+@frappe.whitelist()
+def validate_invoice_percentage_total(
+    sales_order,
+    current_invoice=None,            
+    custom_invoice_percentage=0,
+    items=None,
+):
+    """
+    Validate that:
+    1) The overall (header) invoicing percentage across all submitted Sales Invoices
+       + the current Proforma's header percentage does not exceed 100.
+    2) No individual Sales Order Item crosses 100% when adding the current Proforma's
+       item-level invoicing_percentage to what has already been invoiced in submitted
+       Sales Invoices.
+
+    NOTE: This function intentionally checks ONLY against submitted Sales Invoices.
+    If you also want to include other Proformas, add another aggregation the same way.
+    """
+    import json
+    from frappe.utils import flt
+
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except Exception:
+            items = []
+    items = items or []
+
+    prev_invoice_names = frappe.get_all(
+        "Sales Invoice",
+        filters={
+            "sales_order": sales_order,
+            "docstatus": 1,
+            "name": ["!=", current_invoice],
+        },
+        pluck="name",
+    )
+
+    total_percentage = sum([
+        flt(frappe.db.get_value("Sales Invoice", inv, "custom_invoice_percentage"))
+        for inv in prev_invoice_names
+    ])
+    total_percentage += flt(custom_invoice_percentage)
+
+    prev_item_rows = frappe.db.sql(
+        """
+        SELECT
+            sii.so_detail,
+            sii.item_code,
+            SUM(COALESCE(sii.invoicing_percentage, 0)) AS total_perc
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE
+            si.sales_order = %s
+            AND si.docstatus = 1
+            AND si.name != %s
+        GROUP BY sii.so_detail, sii.item_code
+        """,
+        (sales_order, current_invoice or ""),
+        as_dict=True,
+    )
+
+    prev_item_totals = {
+        (r.so_detail or r.item_code): flt(r.total_perc) for r in prev_item_rows
+    }
+
+    items_exceeding = []
+    for idx, it in enumerate(items, start=1):
+        key = it.get("so_detail") or it.get("sales_order_item") or it.get("item_code")
+        current_item_perc = flt(it.get("invoicing_percentage", custom_invoice_percentage))
+        prev_item_perc = flt(prev_item_totals.get(key, 0))
+        total_item_perc = prev_item_perc + current_item_perc
+
+        if total_item_perc > 100:
+            items_exceeding.append({
+                "row_idx": idx,               
+                "so_detail": key,
+                "item_code": it.get("item_code"),
+                "prev": prev_item_perc,
+                "current": current_item_perc,
+                "total": total_item_perc,
+            })
+
+    return {
+        "total_invoice_percent": total_percentage,
+        "items_exceeding": items_exceeding,
+    }
+
+
+@frappe.whitelist()
+def get_remaining_qty_from_so(sales_order, current_invoice=None):
+    from collections import defaultdict
+    import frappe
+
+    so_items = frappe.db.get_all("Sales Order Item",
+        filters={"parent": sales_order},
+        fields=["item_code", "rate", "qty"]
+    )
+
+    so_item_map = {}
+    for i in so_items:
+        key = f"{i.item_code}||{flt(i.rate)}"
+        so_item_map[key] = flt(i.qty)
+
+    pi_items = frappe.db.sql("""
+        SELECT pii.item_code, pii.rate, pii.qty
+        FROM `tabProforma Invoice` pi
+        JOIN `tabProforma Invoice Item` pii ON pii.parent = pi.name
+        WHERE pi.sales_order = %s AND pi.docstatus = 1
+        {exclude_clause}
+    """.format(exclude_clause="AND pi.name != %s" if current_invoice else ""),
+        (sales_order, current_invoice) if current_invoice else (sales_order,),
+        as_dict=True
+    )
+
+    invoiced_qty_map = defaultdict(float)
+    for row in pi_items:
+        key = f"{row.item_code}||{flt(row.rate)}"
+        invoiced_qty_map[key] += flt(row.qty)
+
+    remaining_qty_map = {}
+    for key, so_qty in so_item_map.items():
+        remaining_qty = so_qty - invoiced_qty_map.get(key, 0)
+        remaining_qty_map[key] = max(remaining_qty, 0)
+    
+    print(remaining_qty_map,11111111111)
+
+    return remaining_qty_map
